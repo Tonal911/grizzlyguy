@@ -4,21 +4,22 @@ The sold index holds years of real transaction prices (sold_price), which makes 
 best free long-history source for menswear. Algolia caps any one query at 1,000 hits, so
 collection walks the history in monthly sold-date windows.
 
-The search key is public (shipped to every browser) and rotates. Resolution order:
-GRAILED_ALGOLIA_KEY env var -> scraped from grailed.com HTML -> `probe discover` to read it
-from the x-algolia-api-key request header.
+The search key is public (shipped to every browser) and rotates; see api_key() for how it
+is found. Verified live 2026-11-14: sold hits carry sold_price, sold_at, sold_at_i,
+designers, size, condition, color; "leather jacket fur collar" alone has 121 sold hits,
+36 of them older than 700 days.
 """
 from __future__ import annotations
 
-import datetime as dt
+import json
 import logging
 import re
 import time
 from typing import Iterator
 from urllib.parse import urlencode
 
-from ..config import Config, env
-from ..net import Http, SourceError
+from ..config import DATA_DIR, Config, env
+from ..net import Blocked, Http, SourceError
 from ..schema import Listing, dig, to_float, to_iso_date
 
 log = logging.getLogger(__name__)
@@ -31,34 +32,65 @@ SOLD_TS_FIELD = env("GRAILED_SOLD_TS_FIELD") or "sold_at_i"
 _key_cache: str | None = None
 
 
-def api_key(http: Http) -> str:
+KEY_CACHE_FILE = DATA_DIR / "grailed_key.json"
+
+
+def key_from_html(html: str) -> str | None:
+    """grailed.com ships its public Algolia config in __NEXT_DATA__ (verified 2026-11-14):
+    props.initialProps.globalData.public_config.algolia.publicSearchKey."""
+    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.S)
+    if m:
+        try:
+            cfg = json.loads(m.group(1))["props"]["initialProps"]["globalData"]["public_config"]["algolia"]
+            if cfg.get("publicSearchKey"):
+                return cfg["publicSearchKey"]
+        except (ValueError, KeyError, TypeError):
+            pass
+    m = re.search(r'"publicSearchKey"\s*:\s*"([a-f0-9]{32})"', html)
+    return m.group(1) if m else None
+
+
+def api_key(http: Http, refresh: bool = False) -> str:
+    """Resolution: GRAILED_ALGOLIA_KEY -> cached key -> grailed.com direct -> grailed.com via
+    ZenRows (25 credits; grailed.com is bot-walled from datacenter IPs)."""
     global _key_cache
-    if _key_cache:
+    if _key_cache and not refresh:
         return _key_cache
     k = env("GRAILED_ALGOLIA_KEY")
+    if not k and not refresh and KEY_CACHE_FILE.exists():
+        k = json.loads(KEY_CACHE_FILE.read_text()).get("key")
     if not k:
-        html = http.get("https://www.grailed.com/").text
-        m = re.search(r'["\'](?:api_?key|apiKey|search_?key)["\']\s*:\s*["\']([a-f0-9]{32})', html, re.I)
-        pos = html.lower().find("algolia")
-        if not m and pos >= 0:  # any 32-hex token near the Algolia config block
-            m = re.search(r'["\']([a-f0-9]{32})["\']', html[pos:pos + 5000])
-        if not m:
-            raise SourceError("Grailed Algolia key not found; run `probe discover --url https://www.grailed.com/sold` "
-                              "and set GRAILED_ALGOLIA_KEY from the x-algolia-api-key header")
-        k = m.group(1)
+        try:
+            k = key_from_html(http.get("https://www.grailed.com/").text)
+        except Blocked:
+            log.info("grailed.com bot-walled; fetching homepage via ZenRows")
+            from .. import zenrows
+
+            k = key_from_html(zenrows.fetch(["https://www.grailed.com/"])["https://www.grailed.com/"] or "")
+        if not k:
+            raise SourceError("Grailed Algolia key not found; set GRAILED_ALGOLIA_KEY from the "
+                              "x-algolia-api-key header (`probe discover --url https://www.grailed.com/sold`)")
+        KEY_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        KEY_CACHE_FILE.write_text(json.dumps({"key": k}))  # public key, shipped to every browser
     _key_cache = k
     return k
 
 
-def _query(http: Http, index: str, params: dict) -> dict:
-    r = http.post(
-        f"https://{APP_ID.lower()}-dsn.algolia.net/1/indexes/*/queries",
-        headers={"x-algolia-application-id": APP_ID, "x-algolia-api-key": api_key(http),
-                 "Origin": "https://www.grailed.com", "Referer": "https://www.grailed.com/"},
-        json={"requests": [{"indexName": index, "params": urlencode(params)}]},
-    )
-    if r.status_code in (401, 403):
-        raise SourceError(f"Algolia rejected key ({r.status_code}); refresh GRAILED_ALGOLIA_KEY")
+def _query(http: Http, index: str, params: dict, _retry: bool = True) -> dict:
+    try:
+        r = http.post(
+            f"https://{APP_ID.lower()}-dsn.algolia.net/1/indexes/*/queries",
+            headers={"x-algolia-application-id": APP_ID, "x-algolia-api-key": api_key(http),
+                     "Origin": "https://www.grailed.com", "Referer": "https://www.grailed.com/"},
+            json={"requests": [{"indexName": index, "params": urlencode(params)}]},
+        )
+    except Blocked:
+        # Algolia answers a stale/rotated key with 403, which Http reports as Blocked.
+        if not _retry or env("GRAILED_ALGOLIA_KEY"):
+            raise SourceError("Algolia rejected the Grailed key; refresh GRAILED_ALGOLIA_KEY")
+        log.info("Grailed key rejected; re-reading it from grailed.com")
+        api_key(http, refresh=True)
+        return _query(http, index, params, _retry=False)
     r.raise_for_status()
     return r.json()["results"][0]
 
@@ -73,7 +105,9 @@ def hit_to_listing(h: dict, sold: bool, query: str | None) -> Listing:
         title=h.get("title", ""),
         price=to_float(price),
         url=f"https://www.grailed.com/listings/{h.get('id') or h.get('objectID')}",
-        shipping=to_float(dig(h, "sold_shipping_price", "shipping.us.amount")),
+        # sold_price_includes_shipping: shipping is already inside price, don't add it twice.
+        shipping=0.0 if sold and h.get("sold_price_includes_shipping")
+        else to_float(dig(h, "sold_shipping_price", "shipping.us.amount")),
         is_sold=sold,
         price_is_actual=sold,
         sold_at=to_iso_date(dig(h, "sold_at", "sold_at_i")) if sold else None,

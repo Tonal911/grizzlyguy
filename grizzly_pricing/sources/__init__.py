@@ -22,13 +22,17 @@ class Source:
 
 
 SOURCES: dict[str, Source] = {s.name: s for s in [
+    # Live status 2026-11-14 (cloud IP): ebay_sold bot-walled direct AND via ZenRows -> run
+    # from a residential IP, or use the Terapeak import for eBay history.
     Source("ebay_sold", ebay.collect_sold, "www.ebay.com", "~90 days", "sale price; list price when Best Offer accepted"),
     Source("ebay_active", ebay.collect_active, "api.ebay.com", "active only", "ask", "EBAY_CLIENT_ID/SECRET"),
     Source("grailed_sold", grailed.collect_sold, "mnrwefss2q-dsn.algolia.net", "years", "actual sale price"),
     Source("grailed_active", grailed.collect_active, "mnrwefss2q-dsn.algolia.net", "active only", "ask"),
     Source("poshmark_sold", poshmark.collect, "poshmark.com", "years", "last list price (offers hidden)"),
+    # mercari: bot-walled direct; via ZenRows returns an empty app shell. Needs local Playwright.
     Source("mercari_sold", mercari.collect, "www.mercari.com", "months-years", "sale price", browser=True),
-    Source("depop", depop.collect, "webapi.depop.com", "thin", "ask / sale"),
+    # depop: API bot-walled; falls back to ZenRows (25 credits/query, 24 active listings).
+    Source("depop", depop.collect, "webapi.depop.com", "active only", "ask", "ZenRows"),
     Source("etsy_active", etsy.collect, "openapi.etsy.com", "active only", "ask", "ETSY_API_KEY"),
     Source("vestiaire_sold", vestiaire.collect, "search.vestiairecollective.com", "undated", "sale price"),
     Source("shopgoodwill_closed", shopgoodwill.collect, "buyerapi.shopgoodwill.com", "~60 days", "hammer price"),

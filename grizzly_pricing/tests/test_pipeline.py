@@ -145,3 +145,41 @@ def test_store_never_downgrades_sale(tmp_path):
     s.upsert([Listing("ebay", "1", "x", 120.0, is_sold=False)])
     row = s.frame().iloc[0]
     assert row.is_sold == 1 and row.price == 100.0
+
+
+def test_grailed_key_from_next_data():
+    html = ('<script id="__NEXT_DATA__" type="application/json">{"props":{"initialProps":{"globalData":'
+            '{"public_config":{"algolia":{"appId":"MNRWEFSS2Q","publicSearchKey":"' + "a" * 32 + '"}}}}}}</script>')
+    assert grailed.key_from_html(html) == "a" * 32
+    assert grailed.key_from_html("<html></html>") is None
+
+
+def test_grailed_shipping_included_not_double_counted():
+    h = {"id": 1, "title": "x", "sold_price": 200, "sold_shipping_price": 15, "sold_price_includes_shipping": True,
+         "sold_at": "2026-01-01T00:00:00Z"}
+    assert grailed.hit_to_listing(h, True, None).shipping == 0.0
+
+
+DEPOP_HTML = """<ul><li class="x_listItem"><div><a aria-label="Schott men's brown jacket"
+ href="/products/vintseller_-schott-leather-bomber-shearling-collar-ab12/"><img src="p.jpg" alt="Schott"></a>
+ <p class="q_sizeAttributeText">L</p><p aria-description="Price">$185.00</p></div></li>
+ <li><a href="/products/other-thing-zz99/">no price here</a></li></ul>"""
+
+
+def test_depop_cards():
+    from grizzly_pricing.sources.depop import parse_search_html
+
+    (l,) = parse_search_html(DEPOP_HTML)
+    assert (l.price, l.size, l.seller, l.is_sold) == (185.0, "L", "vintseller", False)
+    assert l.description == "schott leather bomber shearling collar"
+
+
+def test_zenrows_budget_guard(tmp_path, monkeypatch):
+    from grizzly_pricing import zenrows
+    from grizzly_pricing.net import SourceError
+
+    monkeypatch.setattr(zenrows, "SPEND_FILE", tmp_path / "spend.json")
+    (tmp_path / "spend.json").write_text('{"credits": 4490}')
+    monkeypatch.setenv("GRIZZLY_ZENROWS_BUDGET", "4500")
+    with pytest.raises(SourceError, match="budget"):
+        zenrows.fetch(["https://example.com/"])
