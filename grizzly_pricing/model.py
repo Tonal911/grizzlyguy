@@ -33,9 +33,15 @@ QUANTILES = (0.1, 0.5, 0.9)
 MIN_ROWS = 60
 
 
-def training_set(df: pd.DataFrame) -> pd.DataFrame:
+def training_set(df: pd.DataFrame, history_days: int | None = 730) -> pd.DataFrame:
     d = df[(df.is_sold == 1) & (df.relevant == 1) & (~df.dup.astype(bool)) & (df.currency == "USD")
            & df.price.between(10, 20000)].copy()
+    if history_days and d["event_date"].notna().any():
+        # Poshmark sold search reaches back to 2015; a handful of old sales would anchor the
+        # index on near-empty months. Keep the analysis window (default 2 years). Undated
+        # rows (Vestiaire) are dropped later by fit() anyway.
+        cutoff = d["event_date"].max() - pd.Timedelta(days=history_days)
+        d = d[d["event_date"].isna() | (d["event_date"] >= cutoff)]
     d["decade_cat"] = d["decade"].map(lambda x: "unknown" if pd.isna(x) else str(int(x)))
     d["y"] = np.log(d["price"])
     return d
