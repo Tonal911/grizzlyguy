@@ -64,6 +64,11 @@ BRANDS = {
     r"\beastman\b": "Eastman",
     r"\baero leather\b": "Aero",
     r"\bsheepskin co\b|\bshearling co\b": "Sheepskin Co",
+    # Brands with "grizzly" in the name. Seen live on Poshmark; they are not the style.
+    r"\bdakota grizzly\b": "Dakota Grizzly",
+    r"\bgrizzly outfitters\b": "Grizzly Outfitters",
+    r"\bfort grizzly\b": "Fort Grizzly",
+    r"\bariat\b": "Ariat",
     r"\bmirage\b": "Mirage",
     r"\bgallery\b": "Gallery",
     r"\bnine west\b": "Nine West",
@@ -73,13 +78,15 @@ BRANDS = {
 _BRAND_RX = [(re.compile(k), v) for k, v in BRANDS.items()]
 
 LEATHER = {
+    # Checked first: "faux leather lambskin-look" is faux. Not real leather -> not relevant.
+    "faux": r"\bfaux[- ]leather\b|\bvegan\b|\bpleather\b|\bpu leather\b|\bimitation|leather[- ]look|"
+            r"\bpolyurethane\b|\bpolyester leather|\bleatherette\b",
     "lambskin": r"lamb ?skin|\blamb\b|nappa",
     "cowhide": r"cow ?hide|\bsteerhide|\bbuffalo|\bbison",
     "horsehide": r"horse ?hide",
     "goatskin": r"goat ?skin|\bgoat\b",
     "suede": r"\bsuede\b",
     "deerskin": r"deer ?skin|\belk\b",
-    "faux": r"\bfaux leather\b|\bvegan leather\b|\bpleather\b|\bpu leather\b|\bimitation",
 }
 COLLAR = {
     "raccoon": r"raccoon",
@@ -126,6 +133,8 @@ EXCLUDE = re.compile(
     r"sewing pattern|\bdoll\b|costume|\bpatch(es)? only|\bpin\b|keychain|\bposter\b|\btoddler|"
     r"\bbaby\b|\bdog\b|\bpet\b|\bbag\b|\bboots?\b|\bgloves?\b|\bhat\b|\bvest\b"
 )
+# "grizzly" inside these names is a brand/model, not the style; stripped before style matching.
+GRIZZLY_BRANDS = re.compile(r"dakota grizzly|grizzly outfitters|fort grizzly|ariat grizzly|grizzly 2\.0|grizzly gear")
 LEATHER_ANY = re.compile(r"leather|lambskin|cowhide|horsehide|suede|sheepskin|shearling|goatskin")
 STYLE_CORE = re.compile(r"grizzly|fur collar|fur trim|shearling|raccoon|mouton|fox collar|sherpa|fur[- ]lined|collar fur")
 
@@ -233,8 +242,10 @@ def extract(row: dict) -> dict:
         "condition_norm": condition_of(text, row.get("condition")),
         "size_norm": size_of(title, row.get("size")),
         "gender": gender_of(text),
-        "grizzly_kw": int("grizzly" in text),
-        "relevant": int(bool(LEATHER_ANY.search(text)) and bool(STYLE_CORE.search(text))
+        "grizzly_kw": int("grizzly" in GRIZZLY_BRANDS.sub(" ", text)),
+        "relevant": int(bool(LEATHER_ANY.search(text))
+                        and bool(STYLE_CORE.search(GRIZZLY_BRANDS.sub(" ", text)))
+                        and _first(LEATHER, text, "") != "faux"
                         and not EXCLUDE.search(title)),
     }
 

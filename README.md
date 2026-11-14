@@ -4,9 +4,11 @@ Collects resale listings of "grizzly"-style leather jackets (heavy leather, fur 
 from every free source, extracts attributes, and fits a pricing model: % effect per attribute,
 a quality-adjusted price index over time, and p10/p50/p90 fair-price bands for a given jacket.
 
-**Status:** parsers and the model are tested only against synthetic data (`tests/`). The build
-container had no network access to any marketplace, so none of the endpoints have been checked
-live. Run the probe steps below first.
+**Status (live probe, 2026-11-14, from a cloud IP):**
+- Working, fields verified: `poshmark_sold` (100% title/price/sold date, 97% brand), `vestiaire_sold` (brand and price; no sold dates, as expected), `shopgoodwill_closed`.
+- Bot-walled from a cloud IP: `ebay_sold`, `mercari_sold`, `depop`, and grailed.com (needed to look up the Grailed search key). Grailed's Algolia API itself is reachable.
+- Not tried: `ebay_active`, `etsy_active` (no keys configured).
+- Lesson from live data: "grizzly" is mostly a brand name on resale sites (Dakota Grizzly, Grizzly Outfitters, Ariat Grizzly). Those names and all faux leather are now filtered out as not relevant. Lead with the fur/shearling-collar queries.
 
 ## Sources ($0)
 

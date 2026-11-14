@@ -84,7 +84,14 @@ def test_dates():
      {"leather_type": "lambskin", "collar": "shearling", "style": "car_coat", "pattern": "distressed",
       "color": "brown", "size_norm": "L", "grizzly_kw": 1, "relevant": 1}),
     ("Leather jacket sewing pattern fur collar", {"relevant": 0}),
-    ("Faux leather jacket faux fur collar women's", {"leather_type": "faux", "collar": "faux_fur", "gender": "women"}),
+    ("Faux leather jacket faux fur collar women's",
+     {"leather_type": "faux", "collar": "faux_fur", "gender": "women", "relevant": 0}),
+    # Real titles seen on Poshmark: "grizzly" as a brand, not the style.
+    ("Dakota Grizzly Men's Faux Leather Sherpa Coat Large Brown EUC",
+     {"brand_norm": "Dakota Grizzly", "grizzly_kw": 0, "relevant": 0}),
+    ("Ariat Grizzly 2.0 Parka Womens Medium Olive Green Insulated Jacket",
+     {"brand_norm": "Ariat", "grizzly_kw": 0, "relevant": 0}),
+    ("Jaclyn Smith Women's Black Faux Fur Collar Leather Look Jacket", {"leather_type": "faux", "relevant": 0}),
 ])
 def test_extract(title, expect):
     f = extract({"title": title})
