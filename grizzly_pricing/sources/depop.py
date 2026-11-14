@@ -12,6 +12,7 @@ from urllib.parse import quote_plus
 
 import re
 
+import requests
 from bs4 import BeautifulSoup
 
 from ..browser import capture_json
@@ -71,8 +72,9 @@ def collect(http: Http, query: str, cfg: Config) -> Iterator[Listing]:
             if not cursor or not dig(body, "meta.has_more", default=True):
                 break
         return
-    except (Blocked, ValueError) as e:
-        log.warning("depop API blocked (%s); falling back", e)
+    except (Blocked, ValueError, requests.HTTPError) as e:
+        # v3 search answers 410 Gone as of 2026-11-14; any API failure falls back.
+        log.warning("depop API unavailable (%s); falling back", str(e)[:80])
     if env("GRIZZLY_DEPOP_VIA") == "browser":
         for _, body in capture_json(f"https://www.depop.com/search/?q={quote_plus(query)}",
                                     lambda u: "webapi.depop.com" in u and "search" in u,

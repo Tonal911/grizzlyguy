@@ -154,6 +154,34 @@ def collect_sold(http: Http, query: str, cfg: Config) -> Iterator[Listing]:
                 break
 
 
+# Grailed's category facet for leather jackets (seen on live sold hits). Searching short
+# style terms inside it finds fur/shearling-collar jackets whose titles don't use the exact
+# phrases in DEFAULT_QUERIES.
+LEATHER_CATEGORIES = ["category_path:outerwear.leather_jackets", "category_path:womens_outerwear.leather_jackets"]
+CATEGORY_TERMS = ["fur", "shearling", "sherpa", "raccoon", "mouton", "fox", "coyote", "grizzly", "fur collar"]
+
+
+def collect_sold_category(http: Http, query: str, cfg: Config) -> Iterator[Listing]:
+    """Sold leather jackets matching each CATEGORY_TERMS term (the passed query is ignored;
+    the source runs its own term list once). Walks monthly sold-date windows."""
+    if query != cfg.queries[0]:
+        return
+    end = int(time.time())
+    for term in CATEGORY_TERMS:
+        t = end - cfg.history_days * 86400
+        while t < end:
+            t2 = min(t + 30 * 86400, end)
+            params = {"query": term, "hitsPerPage": 100, "facetFilters": json.dumps([LEATHER_CATEGORIES]),
+                      "numericFilters": f"{SOLD_TS_FIELD}>={t},{SOLD_TS_FIELD}<{t2}"}
+            for page in range(10):
+                res = _query(http, SOLD_INDEX, {**params, "page": page})
+                for h in res.get("hits", []):
+                    yield hit_to_listing(h, True, f"category:{term}")
+                if page + 1 >= res.get("nbPages", 0):
+                    break
+            t = t2
+
+
 def collect_active(http: Http, query: str, cfg: Config) -> Iterator[Listing]:
     for page in range(min(cfg.max_pages, 10)):
         res = _query(http, ACTIVE_INDEX, {"query": query, "hitsPerPage": 100, "page": page})

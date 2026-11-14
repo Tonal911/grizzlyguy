@@ -131,7 +131,10 @@ MADE_IN = {
 }
 EXCLUDE = re.compile(
     r"sewing pattern|\bdoll\b|costume|\bpatch(es)? only|\bpin\b|keychain|\bposter\b|\btoddler|"
-    r"\bbaby\b|\bdog\b|\bpet\b|\bbag\b|\bboots?\b|\bgloves?\b|\bhat\b|\bvest\b"
+    r"\bbaby\b|\bdog\b|\bpet\b|\bbag\b|\bboots?\b|\bgloves?\b|\bhat\b|\bvest\b|"
+    # Non-jackets seen as false positives in live Vestiaire/Poshmark data (2026-11-14).
+    r"\bshirt\b|\bpolo\b|\bdress\b|\bskirt\b|\bpants\b|\bjeans\b|\btrousers\b|\bshoes\b|"
+    r"\bsneakers?\b|\bscarf\b|\bsweater\b|\bhoodie\b|\bbelt\b|\bwallet\b|\bpurse\b"
 )
 # "grizzly" inside these names is a brand/model, not the style; stripped before style matching.
 GRIZZLY_BRANDS = re.compile(r"dakota grizzly|grizzly outfitters|fort grizzly|ariat grizzly|grizzly 2\.0|grizzly gear")
@@ -226,7 +229,11 @@ def gender_of(text: str) -> str:
 
 
 def extract(row: dict) -> dict:
-    text = f"{row.get('title') or ''} {row.get('description') or ''}".lower()
+    # Rows from pandas carry NaN (a float) for missing values; normalize to None / str.
+    row = {k: (None if v is None or (isinstance(v, float) and v != v) else
+               (str(v) if k in ("title", "description", "brand", "size", "condition", "age_hint") else v))
+           for k, v in row.items()}
+    text =f"{row.get('title') or ''} {row.get('description') or ''}".lower()
     title = (row.get("title") or "").lower()
     return {
         "brand_norm": brand_of(text, row.get("brand")),
@@ -243,7 +250,9 @@ def extract(row: dict) -> dict:
         "size_norm": size_of(title, row.get("size")),
         "gender": gender_of(text),
         "grizzly_kw": int("grizzly" in GRIZZLY_BRANDS.sub(" ", text)),
-        "relevant": int(bool(LEATHER_ANY.search(text))
+        # Leather word required in the TITLE: descriptions (Vestiaire especially) mention
+        # leather/shearling for trims and linings of non-leather garments.
+        "relevant": int(bool(LEATHER_ANY.search(title))
                         and bool(STYLE_CORE.search(GRIZZLY_BRANDS.sub(" ", text)))
                         and _first(LEATHER, text, "") != "faux"
                         and not EXCLUDE.search(title)),

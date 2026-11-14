@@ -27,6 +27,8 @@ SOURCES: dict[str, Source] = {s.name: s for s in [
     Source("ebay_sold", ebay.collect_sold, "www.ebay.com", "~90 days", "sale price; list price when Best Offer accepted"),
     Source("ebay_active", ebay.collect_active, "api.ebay.com", "active only", "ask", "EBAY_CLIENT_ID/SECRET"),
     Source("grailed_sold", grailed.collect_sold, "mnrwefss2q-dsn.algolia.net", "years", "actual sale price"),
+    Source("grailed_sold_category", grailed.collect_sold_category, "mnrwefss2q-dsn.algolia.net", "years",
+           "actual sale price"),
     Source("grailed_active", grailed.collect_active, "mnrwefss2q-dsn.algolia.net", "active only", "ask"),
     Source("poshmark_sold", poshmark.collect, "poshmark.com", "years", "last list price (offers hidden)"),
     # mercari: bot-walled direct; via ZenRows returns an empty app shell. Needs local Playwright.

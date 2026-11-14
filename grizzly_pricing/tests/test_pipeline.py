@@ -92,9 +92,12 @@ def test_dates():
     ("Ariat Grizzly 2.0 Parka Womens Medium Olive Green Insulated Jacket",
      {"brand_norm": "Ariat", "grizzly_kw": 0, "relevant": 0}),
     ("Jaclyn Smith Women's Black Faux Fur Collar Leather Look Jacket", {"leather_type": "faux", "relevant": 0}),
+    # Live false positives: leather/shearling only in the description, or not a jacket.
+    ("Polo shirt", {"relevant": 0}),
+    ("Faux fur coat", {"relevant": 0}),
 ])
 def test_extract(title, expect):
-    f = extract({"title": title})
+    f = extract({"title": title, "description": "leather trim, shearling collar" if len(title) < 15 else None})
     for k, v in expect.items():
         assert f[k] == v, (k, f[k])
 
