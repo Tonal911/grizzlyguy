@@ -32,7 +32,10 @@ CREATE TABLE IF NOT EXISTS observations (
 class Store:
     def __init__(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(path)
+        # Several collectors (one per source) may write at once: WAL lets readers run during a
+        # write, and the long timeout makes a writer wait for the lock instead of failing.
+        self.db = sqlite3.connect(path, timeout=120)
+        self.db.execute("PRAGMA journal_mode=WAL")
         self.db.executescript(SCHEMA)
 
     def upsert(self, items: Iterable[Listing]) -> tuple[int, int]:
@@ -66,6 +69,9 @@ class Store:
                 "INSERT OR IGNORE INTO observations VALUES (?,?,?,?,?)",
                 (it.source, it.source_id, row["collected_at"], it.price, int(it.is_sold)),
             )
+            # Commit per item: `items` is a generator doing network I/O between yields, so a
+            # transaction left open would hold the write lock for minutes and stall other sources.
+            self.db.commit()
         self.db.commit()
         return new, seen
 
