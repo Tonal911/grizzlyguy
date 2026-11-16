@@ -5,6 +5,7 @@ lists. Site-provided structured fields (brand, Etsy when_made) take precedence o
 """
 from __future__ import annotations
 
+import json
 import re
 
 import numpy as np
@@ -229,6 +230,52 @@ def gender_of(text: str) -> str:
     return "unknown"
 
 
+GRAILED_CONDITION = {"is_new": "new", "is_gently_used": "excellent", "is_used": "good", "is_worn": "flawed"}
+# eBay conditionId: 1000 New with tags, 1500 New without tags, 1750 New with defects, 3000 Pre-owned.
+EBAY_CONDITION = {"1000": "new", "1500": "new", "1750": "flawed", "2750": "excellent", "3000": "good", "7000": "flawed"}
+EBAY_GENDER = {"57988": "men", "63862": "women"}
+STYLE_FROM_CATEGORY = {"bombers": "bomber", "heavy_coats": "long_coat", "coats": "long_coat", "parkas": "parka"}
+
+
+def _name(v) -> str | None:
+    """First name out of the shapes sites use: "Brown", {"display": ..}, [{"name": ..}], {"all": [..]}."""
+    if isinstance(v, dict):
+        v = v.get("all") or v.get("display") or v.get("name")
+    if isinstance(v, list):
+        v = v[0] if v else None
+        if isinstance(v, dict):
+            v = v.get("name") or v.get("display")
+    return str(v).strip().lower() if v else None
+
+
+def structured(source: str | None, raw) -> dict:
+    """Attributes the sites give as fields. Verified against stored data 2026-11-16:
+    Grailed color/condition/department/category_path, Poshmark colors/department,
+    Vestiaire colors, eBay (Apify) conditionId/categoryId."""
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return {}
+    if not isinstance(raw, dict):
+        return {}
+    out = {}
+    color = _name(raw.get("color") or raw.get("colors"))
+    if color:
+        out["color"] = "grey" if color == "gray" else color
+    dept = _name(raw.get("department"))
+    if dept:
+        out["gender"] = "women" if dept.startswith("women") else "men" if dept.startswith("men") else None
+    if source == "grailed":
+        out["condition_norm"] = GRAILED_CONDITION.get(raw.get("condition"))
+        cat = str(raw.get("category_path") or "").split(".")[-1]
+        out["style"] = STYLE_FROM_CATEGORY.get(cat)
+    if source == "ebay":
+        out["condition_norm"] = EBAY_CONDITION.get(str(raw.get("conditionId")))
+        out["gender"] = EBAY_GENDER.get(str(raw.get("categoryId")))
+    return {k: v for k, v in out.items() if v}
+
+
 def extract(row: dict) -> dict:
     # Rows from pandas carry NaN (a float) for missing values; normalize to None / str.
     row = {k: (None if v is None or (isinstance(v, float) and v != v) else
@@ -236,6 +283,17 @@ def extract(row: dict) -> dict:
            for k, v in row.items()}
     text =f"{row.get('title') or ''} {row.get('description') or ''}".lower()
     title = (row.get("title") or "").lower()
+    feats = _from_text(row, text, title)
+    # A site's own field beats a guess from the title; the title fills in where there is none
+    # (a style the title names, e.g. "bomber", beats the generic category "leather jacket").
+    for k, v in structured(row.get("source"), row.get("raw")).items():
+        if k == "style" and feats.get("style") not in ("jacket", None):
+            continue
+        feats[k] = v
+    return feats
+
+
+def _from_text(row: dict, text: str, title: str) -> dict:
     return {
         "brand_norm": brand_of(text, row.get("brand")),
         "decade": decade_of(text, row.get("age_hint")),

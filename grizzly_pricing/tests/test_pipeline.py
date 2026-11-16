@@ -218,3 +218,14 @@ def test_collect_keeps_only_relevant_above_floor():
              Listing("ebay", "4", "Leather jacket fur collar", None)]                          # no price
     skipped = {"n": 0}
     assert [i.source_id for i in keep(items, 200, skipped)] == ["1"] and skipped["n"] == 3
+
+
+def test_structured_fields_override_title_guesses():
+    g = extract({"title": "Leather jacket shearling collar", "source": "grailed",
+                 "raw": '{"color": "brown", "condition": "is_new", "department": "menswear", "category_path": "outerwear.bombers"}'})
+    assert (g["color"], g["condition_norm"], g["gender"], g["style"]) == ("brown", "new", "men", "bomber")
+    p = extract({"title": "Leather coat fur collar", "source": "poshmark",
+                 "raw": '{"colors": [{"name": "Black"}], "department": {"display": "Women"}}'})
+    assert (p["color"], p["gender"]) == ("black", "women")
+    e = extract({"title": "Leather jacket fur collar", "source": "ebay", "raw": '{"conditionId": 3000, "categoryId": "63862"}'})
+    assert (e["condition_norm"], e["gender"]) == ("good", "women")
