@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from . import depop, ebay, etsy, grailed, mercari, poshmark, shopgoodwill, vestiaire
+from . import depop, ebay, ebay_apify, etsy, grailed, mercari, poshmark, shopgoodwill, vestiaire
 
 
 @dataclass(frozen=True)
@@ -25,6 +25,8 @@ SOURCES: dict[str, Source] = {s.name: s for s in [
     # Live status 2026-11-14 (cloud IP): ebay_sold bot-walled direct AND via ZenRows -> run
     # from a residential IP, or use the Terapeak import for eBay history.
     Source("ebay_sold", ebay.collect_sold, "www.ebay.com", "~90 days", "sale price; list price when Best Offer accepted"),
+    Source("ebay_sold_apify", ebay_apify.collect, "api.apify.com", "~90 days",
+           "sale price; list price when Best Offer accepted (flagged)", "Apify token"),
     Source("ebay_active", ebay.collect_active, "api.ebay.com", "active only", "ask", "EBAY_CLIENT_ID/SECRET"),
     Source("grailed_sold", grailed.collect_sold, "mnrwefss2q-dsn.algolia.net", "years", "actual sale price"),
     Source("grailed_sold_category", grailed.collect_sold_category, "mnrwefss2q-dsn.algolia.net", "years",

@@ -186,3 +186,13 @@ def test_zenrows_budget_guard(tmp_path, monkeypatch):
     monkeypatch.setenv("GRIZZLY_ZENROWS_BUDGET", "4500")
     with pytest.raises(SourceError, match="budget"):
         zenrows.fetch(["https://example.com/"])
+
+
+def test_ebay_apify_item():
+    from grizzly_pricing.sources.ebay_apify import item_to_listing
+
+    x = {"itemId": "1234", "title": "Vintage 80s Leather Shearling Jacket", "soldPrice": "183.75",
+         "soldCurrency": "USD", "shippingPrice": 12.5, "endedAt": "2026-11-16T10:00:00Z",
+         "isBestOfferAccepted": True, "sellerUsername": "s", "keyword": "q"}
+    l = item_to_listing(x)
+    assert (l.price, l.shipping, l.sold_at, l.is_sold, l.price_is_actual) == (183.75, 12.5, "2026-11-16", True, False)

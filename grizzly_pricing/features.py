@@ -93,6 +93,7 @@ COLLAR = {
     "fox": r"\bfox\b",
     "coyote": r"coyote",
     "mink": r"\bmink\b",
+    "rabbit": r"\brabbit\b|\blapin\b",
     "mouton": r"mouton",
     "shearling": r"shearling|sheepskin collar|sherpa",
     "faux_fur": r"faux fur|faux-fur",
