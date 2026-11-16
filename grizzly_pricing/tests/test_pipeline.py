@@ -131,7 +131,7 @@ def _synthetic(n=900, seed=0):
 
 def test_model_recovers_known_effects():
     df = build_frame(_synthetic())
-    m = fit(df)
+    m = fit(df, min_price=10)  # synthetic prices sit around $120, under the default floor
     eff = m.effects.set_index(["feature", "level"]).pct_effect
     # Schott vs the other three brands: the centered effect gap should be near +60%.
     others = eff.loc["brand_norm"].drop("Schott").mean()
@@ -207,3 +207,14 @@ def test_ebay_apify_item():
          "isBestOfferAccepted": True, "sellerUsername": "s", "keyword": "q"}
     l = item_to_listing(x)
     assert (l.price, l.shipping, l.sold_at, l.is_sold, l.price_is_actual) == (183.75, 12.5, "2026-11-16", True, False)
+
+
+def test_collect_keeps_only_relevant_above_floor():
+    from grizzly_pricing.cli import keep
+
+    items = [Listing("ebay", "1", "Vintage Schott leather jacket shearling collar", 350.0),
+             Listing("ebay", "2", "Vintage Schott leather jacket shearling collar", 120.0),   # under floor
+             Listing("ebay", "3", "Dakota Grizzly faux leather sherpa coat", 250.0),           # not relevant
+             Listing("ebay", "4", "Leather jacket fur collar", None)]                          # no price
+    skipped = {"n": 0}
+    assert [i.source_id for i in keep(items, 200, skipped)] == ["1"] and skipped["n"] == 3

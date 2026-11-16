@@ -23,6 +23,9 @@ DEFAULT_QUERIES = [
 class Config:
     queries: list[str] = field(default_factory=lambda: list(DEFAULT_QUERIES))
     history_days: int = 730
+    # Floor for every source, at collection and in the model. Sub-$200 sales are mostly
+    # mall/fast-fashion jackets; Terapeak pages are saved with the same $200 filter.
+    min_price: float = float(os.environ.get("GRIZZLY_MIN_PRICE", 200))
     max_pages: int = 20
     min_delay: float = 2.0
     max_delay: float = 5.0

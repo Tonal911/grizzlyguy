@@ -12,6 +12,38 @@ from .net import Blocked, Http
 log = logging.getLogger("grizzly")
 
 
+def keep(items, min_price: float, skipped: dict):
+    """Store only relevant listings at or above the price floor (no junk in the DB)."""
+    from .features import extract
+
+    for it in items:
+        if it.price is not None and it.price >= min_price and extract(it.to_row())["relevant"]:
+            yield it
+        else:
+            skipped["n"] += 1
+
+
+def cmd_prune(cfg: Config, a) -> None:
+    """Delete stored rows that `keep` would reject (collected before the floor existed)."""
+    from .features import extract
+    from .store import Store
+
+    st = Store(cfg.db_path)
+    rows = st.db.execute("SELECT source, source_id, title, description, brand, price FROM listings").fetchall()
+    junk = [(r[0], r[1]) for r in rows
+            if r[5] is None or r[5] < cfg.min_price
+            or not extract({"title": r[2], "description": r[3], "brand": r[4]})["relevant"]]
+    print(f"{len(junk)} of {len(rows)} rows are below ${cfg.min_price:g} or not relevant")
+    if not a.yes:
+        print("dry run; add --yes to delete them")
+        return
+    st.db.executemany("DELETE FROM listings WHERE source=? AND source_id=?", junk)
+    st.db.executemany("DELETE FROM observations WHERE source=? AND source_id=?", junk)
+    st.db.commit()
+    st.db.execute("VACUUM")
+    print(f"deleted {len(junk)} rows")
+
+
 def cmd_collect(cfg: Config, a) -> None:
     from .sources import SOURCES
     from .store import Store
@@ -22,8 +54,9 @@ def cmd_collect(cfg: Config, a) -> None:
         src = SOURCES[name]
         for q in cfg.queries:
             try:
-                new, seen = store.upsert(src.collect(http, q, cfg))
-                log.info("%-20s %-40s new=%d updated=%d", name, q, new, seen)
+                kept = keep(src.collect(http, q, cfg), cfg.min_price, skipped := {"n": 0})
+                new, seen = store.upsert(kept)
+                log.info("%-20s %-40s new=%d updated=%d skipped=%d", name, q, new, seen, skipped["n"])
             except Blocked as e:
                 log.error("%s blocked: %s. Retry with --headful, or later.", name, e)
                 break
@@ -57,7 +90,7 @@ def cmd_train(cfg: Config, a) -> None:
     df = _frame(cfg)
     fitted = None
     try:
-        fitted = fit(df)
+        fitted = fit(df, min_price=cfg.min_price if a.min_price is None else a.min_price)
         fitted.save(cfg.report_dir / "model.pkl")
         print(json.dumps(fitted.metrics, indent=1))
     except ValueError as e:
@@ -117,7 +150,11 @@ def main(argv=None) -> None:
     i = sub.add_parser("import-terapeak")
     i.add_argument("path")
     i.add_argument("--query")
-    sub.add_parser("train")
+    tr = sub.add_parser("train")
+    tr.add_argument("--min-price", type=float, default=None,
+                    help="price floor for every source (default: GRIZZLY_MIN_PRICE, 200)")
+    pr2 = sub.add_parser("prune", help="delete stored rows below the price floor or not relevant")
+    pr2.add_argument("--yes", action="store_true")
     e = sub.add_parser("estimate")
     e.add_argument("title")
     e.add_argument("--description")
@@ -137,7 +174,7 @@ def main(argv=None) -> None:
         cfg = replace(cfg, queries=a.queries)
     if a.max_pages:
         cfg = replace(cfg, max_pages=a.max_pages)
-    {"collect": cmd_collect, "import-terapeak": cmd_import, "train": cmd_train,
+    {"collect": cmd_collect, "prune": cmd_prune, "import-terapeak": cmd_import, "train": cmd_train,
      "estimate": cmd_estimate, "probe": cmd_probe}[a.cmd](cfg, a)
 
 

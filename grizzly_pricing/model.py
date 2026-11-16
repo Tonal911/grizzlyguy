@@ -33,9 +33,18 @@ QUANTILES = (0.1, 0.5, 0.9)
 MIN_ROWS = 60
 
 
-def training_set(df: pd.DataFrame, history_days: int | None = 730) -> pd.DataFrame:
+def training_set(df: pd.DataFrame, history_days: int | None = 730, min_price: float | None = None) -> pd.DataFrame:
+    """min_price: price floor applied to EVERY source. The Terapeak pages are saved with a
+    $200 minimum, so modeling that segment means flooring all sources at $200 too; otherwise
+    eBay looks inflated relative to sites whose cheap sales are kept."""
+    if min_price is None:
+        from .config import Config
+
+        min_price = Config().min_price
     d = df[(df.is_sold == 1) & (df.relevant == 1) & (~df.dup.astype(bool)) & (df.currency == "USD")
-           & df.price.between(10, 20000)].copy()
+           & df.price.between(min_price, 20000)].copy()
+    if min_price < 200 and "ebay_terapeak" in set(d.source):
+        log.warning("ebay_terapeak rows were saved with a $200 floor; a lower --min-price biases eBay upward")
     if history_days and d["event_date"].notna().any():
         # Poshmark sold search reaches back to 2015; a handful of old sales would anchor the
         # index on near-empty months. Keep the analysis window (default 2 years). Undated
@@ -127,8 +136,8 @@ def _time_adj(pipe: Pipeline) -> dict:
     return {k.replace("month__month_", ""): float(v) for k, v in mon.items()}
 
 
-def fit(df: pd.DataFrame) -> Fitted:
-    d = training_set(df).dropna(subset=["month"])
+def fit(df: pd.DataFrame, min_price: float | None = None) -> Fitted:
+    d = training_set(df, min_price=min_price).dropna(subset=["month"])
     if len(d) < MIN_ROWS:
         raise ValueError(f"only {len(d)} usable sold rows; need >= {MIN_ROWS}. Collect more first.")
     min_freq = max(5, len(d) // 200)
