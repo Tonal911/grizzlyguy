@@ -4,8 +4,9 @@ Terapeak Product Research is free for eBay accounts (Seller Hub -> Research) and
 to 3 years of sold listings. It has no API or export button. Workflow:
   1. Seller Hub -> Research -> Product research. Search a query, set the range to 2 years,
      open the "Sold" tab.
-  2. Select the results table, copy, paste into a spreadsheet, save as CSV. Or save the page
-     (Ctrl+S, "Webpage, HTML only").
+  2. Save the page (Ctrl+S, "Webpage, HTML only"). Terapeak has no CSV export; the saved
+     page is the export. Set "Results per page" to 50 and save each page. Clear the price
+     range filter first, or the data is truncated.
   3. `python -m grizzly_pricing import-terapeak <file> --query "<query>"`
 Repeat with narrower queries or shorter date ranges where a search hits its result cap.
 
@@ -68,14 +69,18 @@ def import_file(path: str | Path, query: str | None = None) -> list[Listing]:
         title = get("title")
         if not title:
             continue
-        # Terapeak cells often hold "Title\nItem ID 1234..." - pull the eBay id if present.
-        m = re.search(r"\b(\d{12})\b", " ".join(r))
+        # Saved Terapeak pages (2026-11) carry no item links or ids; the image alt text leaks
+        # into the title cell as ", preview full size image".
+        title = re.sub(r"^[,\s]*preview full size image\s*", "", title, flags=re.I)
+        title = re.sub(r"^New Listing\s*", "", title)
         sold_at = to_iso_date(get("sold_at")) if get("sold_at") else None
-        sid = m.group(1) if m else hashlib.sha1(f"{title}|{get('price')}|{sold_at}".encode()).hexdigest()[:16]
+        sid = hashlib.sha1(f"{title}|{get('price')}|{sold_at}".encode()).hexdigest()[:16]
         out.append(Listing(
-            source="ebay", source_id=sid, title=re.sub(r"\s+", " ", title),
+            # Own source name: no shared item id with the Apify eBay rows, so the cross-source
+            # dedupe (same title, price within 10%, 45 days) is what removes overlaps.
+            source="ebay_terapeak", source_id=sid, title=re.sub(r"\s+", " ", title).strip(),
             price=to_float(get("price")), shipping=to_float(get("shipping")),
-            url=f"https://www.ebay.com/itm/{m.group(1)}" if m else get("url"),
+            url=get("url"),
             is_sold=True, price_is_actual=True, sold_at=sold_at, query=query,
             raw={"terapeak_row": r, "qty": get("qty")},
         ))

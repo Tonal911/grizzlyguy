@@ -69,7 +69,18 @@ def test_terapeak_csv(tmp_path):
     f.write_text("Listing,Avg sold price,Avg shipping,Total sold,Date last sold\n"
                  "\"Vintage Leather Jacket Fur Collar 125566778899\",$120.50,$15.00,1,\"Mar 4, 2025\"\n")
     (l,) = import_file(f)
-    assert (l.source_id, l.price, l.shipping, l.sold_at) == ("125566778899", 120.5, 15.0, "2025-03-04")
+    assert (l.source, l.price, l.shipping, l.sold_at) == ("ebay_terapeak", 120.5, 15.0, "2025-03-04")
+
+
+def test_terapeak_saved_page_title_cleanup(tmp_path):
+    f = tmp_path / "tp.html"
+    f.write_text("<table><tr><th>Listing</th><th>Actions</th><th>Avg sold price</th><th>Avg shipping</th>"
+                 "<th>Total sold</th><th>Item sales</th><th>Bids</th><th>Date last sold</th></tr>"
+                 "<tr><td>, preview full size image Vintage Schott Leather Jacket Fur Collar</td><td>Edit</td>"
+                 "<td>$306.00 Fixed price</td><td>$36.55 0% Free shipping</td><td>2</td><td>$612.00</td>"
+                 "<td>-</td><td>Aug 5, 2026</td></tr></table>")
+    (l,) = import_file(f)
+    assert (l.title, l.price, l.shipping, l.sold_at) == ("Vintage Schott Leather Jacket Fur Collar", 306.0, 36.55, "2026-08-05")
 
 
 def test_dates():
